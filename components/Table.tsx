@@ -8,40 +8,62 @@ type TableProps = {
     rows: NestedRow[]
 }
 
+function getHeaders(row: NestedRow) {
+    return Object.keys(row)
+}
+
+function buildRows(rows: NestedRow[]) {
+    const headers = getHeaders(rows[0]);
+    return (
+        rows.map((row) => (
+            <tr>
+                {
+                    headers.map((header, index) => {
+                        const value = row[header];
+                        return (
+                            <td key={index}>{getContent(header, value)}</td>
+                        )
+                    })
+                }
+            </tr>
+        ))
+    )
+}
+
+function getContent(key: string, value: NestedRow[string]) {
+    if (value === null)
+        return '';
+
+    if (typeof value !== 'object')
+        return value;
+
+    return getAsList(key, value);
+}
+
+function getAsList(key: string, obj: Row) {
+    return (
+        <details>
+            <summary>{key}</summary>
+            <ul>
+                {
+                    Object.keys(obj).map((prop, index) => {
+                        return (
+                            <li key={index}>
+                                <span style={{ fontWeight: 'bold' }}>{key}.{prop}</span>
+                                <>{getContent(prop, obj[prop])}</>
+                            </li>
+                        )
+                    })
+                }
+            </ul>
+        </details>
+    )
+}
+
+
 export default function Table({ rows }: TableProps) {
+    const headers = getHeaders(rows[0]);
 
-
-    const headers = Object.keys(rows[0]);
-
-    function getContent(key: string, value: NestedRow[string]) {
-        if (value === null)
-            return '';
-
-        if (typeof value !== 'object')
-            return value;
-
-        return getAsList(key, value);
-    }
-
-    function getAsList(key: string, obj: Row) {
-        return (
-            <details>
-                <summary>{key}</summary>
-                <ul>
-                    {
-                        Object.keys(obj).map((prop, index) => {
-                            return (
-                                <li key={index}>
-                                    <span style={{ fontWeight: 'bold' }}>{key}.{prop}</span>
-                                    <>{getContent(prop, obj[prop])}</>
-                                </li>
-                            )
-                        })
-                    }
-                </ul>
-            </details>
-        )
-    }
 
     return (
         <table>
@@ -53,20 +75,7 @@ export default function Table({ rows }: TableProps) {
                 }
             </thead>
             <tbody>
-                {
-                    rows.map((row) => (
-                        <tr>
-                            {
-                                headers.map((header, index) => {
-                                    const value = row[header];
-                                    return (
-                                        <td key={index}>{getContent(header, value)}</td>
-                                    )
-                                })
-                            }
-                        </tr>
-                    ))
-                }
+                {buildRows(rows)}
             </tbody>
         </table>
     )

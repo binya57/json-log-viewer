@@ -3,26 +3,19 @@ import { isValidElement } from "react";
 import { renderToStaticMarkup } from 'react-dom/server';
 import Table, { type NestedRow } from './components/Table.tsx';
 import Form from './components/Form.tsx';
+import type { Server } from 'bun';
+import htmlLayoutFile from "./index.html" with { type: "text" };
+import { watch } from "fs";
+
 
 const server = Bun.serve({
     async fetch(req, server) {
-        const success = server.upgrade(req);
-        if (success) {
-            // Bun automatically returns a 101 Switching Protocols
-            // if the upgrade succeeds
-            return undefined;
+        try {
+            return await handleHttpRequest(req, server);
+        } catch (error) {
+            console.error(error);
+            return new Response("Internal Server Error", { status: 500 });
         }
-
-        // handle HTTP request normally
-        if (req.method === 'POST') {
-            const formData = await req.formData();
-            const fileOrFolderPath = formData.get('file_or_folder');
-            const jsonObjects = await getAsJsonObjectsArray(fileOrFolderPath?.toString() ?? '');
-            // const html = createHtml(jsonObjects);
-            // return new Response(Bun.file('./jsonl-log-reader.html'));
-            return new Response(layout(createHtml(<Table rows={jsonObjects} />)), { headers: { "Content-Type": "text/html" } });
-        }
-        return new Response(layout(createHtml(<Form />)), { headers: { "Content-Type": "text/html" } });
     },
 
 
@@ -35,7 +28,8 @@ const server = Bun.serve({
             ws.send(`You said: ${message}`);
         },
         // a socket is opened
-        open(ws) { },
+        open(ws) {
+        },
         // a socket is closed
         close(ws, code, message) { },
         // the socket is ready to receive more data
@@ -44,12 +38,45 @@ const server = Bun.serve({
     },
 });
 
+async function handleHttpRequest(req: Request, server: Server) {
+    const success = server.upgrade(req);
+    if (success) {
+        // Bun automatically returns a 101 Switching Protocols
+        // if the upgrade succeeds
+        return undefined;
+    }
+
+    // handle HTTP request normally
+    if (req.method === 'POST') {
+
+        const formData = await req.formData();
+        const fileOrFolderPath = formData.get('file_or_folder');
+        if (!fileOrFolderPath) throw new Error('no file or folder path provided');
+        const jsonObjects = await getFileAsJsonObjectsArray(fileOrFolderPath?.toString() ?? '');
+        return new Response(layout(renderJsxToHtml(<Table rows={jsonObjects} />)), { headers: { "Content-Type": "text/html" } });
+    }
+    return new Response(layout(renderJsxToHtml(<Form />)), { headers: { "Content-Type": "text/html" } });
+}
+
 const decoder = new TextDecoder();
-async function getAsJsonObjectsArray(path: string) {
+async function getFileAsJsonObjectsArray(path: string) {
     if (!path) {
         throw new Error("invalid path");
     }
     const file = Bun.file(path);
+    const watcher = watch(path, (event, filename) => {
+        if (event !== 'change') return;
+        console.log(`Detected ${event} in ${filename}`);
+    });
+
+    process.on("SIGINT", () => {
+        // close watcher when Ctrl-C is pressed
+        console.log("Closing watcher...");
+        watcher.close();
+
+        process.exit(0);
+    });
+
     const stream = file.stream();
     let remainingData = "";
     const jsonObjects: NestedRow[] = [];
@@ -61,6 +88,7 @@ async function getAsJsonObjectsArray(path: string) {
         // Loop through each line, except the last one
         while (lines.length > 1) {
             // Remove the first line from the array and pass it to the callback
+
             const line = lines.shift();
             jsonObjects.push(JSON.parse(line || "{}"));
         }
@@ -69,16 +97,11 @@ async function getAsJsonObjectsArray(path: string) {
     }
     return jsonObjects;
 }
-const css = Bun.file('./main.css').text();
 
-function createHtml(jsx: JSX.Element) {
-    return renderJsxToHtml(jsx);
-}
-
-const htmlLayoutFile = await Bun.file('./index.html').text();
+const css = await Bun.file('./index.css').text();
 
 function layout(html: string) {
-    const withLayout = htmlLayoutFile.replace('{html}', html)
+    const withLayout = htmlLayoutFile.replace('{html}', html).replace('{css}', `<style>${css}</style>`);
     return (
         withLayout
     )
@@ -88,18 +111,5 @@ const renderJsxToHtml = (jsx: JSX.Element) => {
     return renderToStaticMarkup(jsx);
 }
 
-function addCss(html: string, css: string) {
-    const rewriter = new HTMLRewriter();
-    rewriter.on('head', {
-        element(head) {
-            head.append(`<style>${css}</style>`);
-        }
-    })
-    rewriter.on("body", {
-        element(body) {
 
-        },
-    });
-}
-
-console.log(`Listening on ${server.hostname}:${server.port}`);
+console.log(`Listening on http://${server.hostname}:${server.port}`);
