@@ -3,11 +3,12 @@ import { isValidElement } from "react";
 import { renderToStaticMarkup } from 'react-dom/server';
 import Table, { type NestedRow } from './components/Table.tsx';
 import Form from './components/Form.tsx';
-import type { Server } from 'bun';
+import type { Server, ServerWebSocket } from 'bun';
 import htmlLayoutFile from "./index.html" with { type: "text" };
 import css from "./index.css" with { type: "text" };
 import { watch } from "fs";
 
+type AppSocket = ServerWebSocket<{ file_or_folder: string }>
 
 const server = Bun.serve({
     async fetch(req, server) {
@@ -29,7 +30,20 @@ const server = Bun.serve({
             ws.send(`You said: ${message}`);
         },
         // a socket is opened
-        open(ws) {
+        open(ws: AppSocket) {
+            const path = ws.data.file_or_folder;
+            const watcher = watch(path, (event, filename) => {
+                if (event !== 'change') return;
+                ws.send('this file have changed')
+            });
+
+            process.on("SIGINT", () => {
+                // close watcher when Ctrl-C is pressed
+                console.log("Closing watcher...");
+                watcher.close();
+
+                process.exit(0);
+            });
         },
         // a socket is closed
         close(ws, code, message) { },
@@ -40,7 +54,11 @@ const server = Bun.serve({
 });
 
 async function handleHttpRequest(req: Request, server: Server) {
-    const success = server.upgrade(req);
+    const success = server.upgrade(req, {
+        data: {
+            file_or_folder: parseCookie(req.headers.get('Cookie'))
+        }
+    });
     if (success) {
         // Bun automatically returns a 101 Switching Protocols
         // if the upgrade succeeds
@@ -49,7 +67,6 @@ async function handleHttpRequest(req: Request, server: Server) {
 
     // handle HTTP request normally
     if (req.method === 'POST') {
-
         const formData = await req.formData();
         const fileOrFolderPath = formData.get('file_or_folder');
         if (!fileOrFolderPath) throw new Error('no file or folder path provided');
@@ -74,19 +91,6 @@ async function getFileAsJsonObjectsArray(path: string) {
         throw new Error("invalid path");
     }
     const file = Bun.file(path);
-    const watcher = watch(path, (event, filename) => {
-        if (event !== 'change') return;
-        console.log(`Detected ${event} in ${filename}`);
-    });
-
-    process.on("SIGINT", () => {
-        // close watcher when Ctrl-C is pressed
-        console.log("Closing watcher...");
-        watcher.close();
-
-        process.exit(0);
-    });
-
     const stream = file.stream();
     let remainingData = "";
     const jsonObjects: NestedRow[] = [];
@@ -119,6 +123,10 @@ function layout(html: string) {
 
 const renderJsxToHtml = (jsx: JSX.Element) => {
     return renderToStaticMarkup(jsx);
+}
+
+function parseCookie(cookie: string) {
+    return cookie.split('=')[1];
 }
 
 
