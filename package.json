@@ -5,6 +5,9 @@
   "bin": {
     "note": "./index.ts"
   },
+  "scripts": {
+    "start": "bun --watch run ./index.tsx"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
