@@ -5,6 +5,7 @@ import Table, { type NestedRow } from './components/Table.tsx';
 import Form from './components/Form.tsx';
 import type { Server } from 'bun';
 import htmlLayoutFile from "./index.html" with { type: "text" };
+import css from "./index.css" with { type: "text" };
 import { watch } from "fs";
 
 
@@ -53,9 +54,18 @@ async function handleHttpRequest(req: Request, server: Server) {
         const fileOrFolderPath = formData.get('file_or_folder');
         if (!fileOrFolderPath) throw new Error('no file or folder path provided');
         const jsonObjects = await getFileAsJsonObjectsArray(fileOrFolderPath?.toString() ?? '');
-        return new Response(layout(renderJsxToHtml(<Table rows={jsonObjects} />)), { headers: { "Content-Type": "text/html" } });
+        const html = renderJsxToHtml(<Table rows={jsonObjects} />);
+        const page = layout(html);
+        return new Response(page, {
+            headers: {
+                "Content-Type": "text/html",
+                "Set-Cookie": `file_or_folder=${fileOrFolderPath}; Secure; HttpOnly; SameSite=Strict;`
+            }
+        });
     }
-    return new Response(layout(renderJsxToHtml(<Form />)), { headers: { "Content-Type": "text/html" } });
+    const html = renderJsxToHtml(<Form />);
+    const page = layout(html);
+    return new Response(page, { headers: { "Content-Type": "text/html" } });
 }
 
 const decoder = new TextDecoder();
@@ -98,7 +108,7 @@ async function getFileAsJsonObjectsArray(path: string) {
     return jsonObjects;
 }
 
-const css = await Bun.file('./index.css').text();
+
 
 function layout(html: string) {
     const withLayout = htmlLayoutFile.replace('{html}', html).replace('{css}', `<style>${css}</style>`);
