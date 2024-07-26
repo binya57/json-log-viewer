@@ -66,17 +66,24 @@ export default function Table({ rows }: TableProps) {
 
 
     return (
-        <table>
-            <thead>
-                {
-                    headers.map((header, index) => (
-                        <th key={index}>{header}</th>
-                    ))
-                }
-            </thead>
-            <tbody>
-                {buildRows(rows)}
-            </tbody>
-        </table>
+        <div style={{
+            height: '100%',
+            overflow: 'auto',
+            position: 'relative',
+            whiteSpace: 'pre'
+        }}>
+            <table>
+                <thead>
+                    {
+                        headers.map((header, index) => (
+                            <th key={index}>{header}</th>
+                        ))
+                    }
+                </thead>
+                <tbody>
+                    {buildRows(rows)}
+                </tbody>
+            </table>
+        </div>
     )
 }
