@@ -103,32 +103,70 @@ async function handleHttpRequest(req: Request, server: Server) {
 }
 
 const decoder = new TextDecoder();
-async function getFileAsJsonObjectsArray(file: BunFile, size = 0) {
+async function getFileAsJsonObjectsArray(file: BunFile, lastPosition = 0) {
     if (!file) {
         throw new Error("invalid file");
     }
-    console.log('recieved size:', size)
-    const stream = file.slice(size, file.size).stream();
+
+    console.log('received lastPosition:', lastPosition);
+    if (lastPosition >= file.size) {
+        return [];
+    }
+
+    const stream = file.stream();
     let remainingData = "";
     const jsonObjects: NestedRow[] = [];
+    let bytesRead = 0;
+
     // ReadableStream<Uint8Array> does have [Symbol.asyncIterator]()
     //@ts-ignore
     for await (const chunk of stream) {
-        const str = decoder.decode(chunk);
-        remainingData += str; // Append the chunk to the remaining data
-        // Split the remaining data by newline character
-        let lines = remainingData.split(/\r?\n/);
-        // Loop through each line, except the last one
-        while (lines.length > 1) {
-            // Remove the first line from the array and add it to the objects array
-            const line = lines.shift();
-            jsonObjects.push(JSON.parse(line || "{}"));
+        if (bytesRead + chunk.length <= lastPosition) {
+            bytesRead += chunk.length;
+            continue;  // Skip this chunk if it's before lastPosition
         }
-        // Update the remaining data with the last incomplete line
-        remainingData = lines[0];
+
+        let relevantChunk;
+        if (bytesRead < lastPosition) {
+            // If part of the chunk is before lastPosition, slice it
+            relevantChunk = chunk.slice(lastPosition - bytesRead);
+            bytesRead = lastPosition;
+        } else {
+            relevantChunk = chunk;
+        }
+
+        const str = decoder.decode(relevantChunk);
+        remainingData += str;
+
+        let lines = remainingData.split(/\r?\n/);
+
+        while (lines.length > 1) {
+            const line = lines.shift()?.trim();
+            if (line) {
+                try {
+                    jsonObjects.push(JSON.parse(line));
+                } catch (error) {
+                    console.error("Error parsing JSON:", error);
+                }
+            }
+        }
+
+        remainingData = lines[0] || "";
+        bytesRead += relevantChunk.length;
     }
+
+    // Handle any remaining data
+    if (remainingData.trim()) {
+        try {
+            jsonObjects.push(JSON.parse(remainingData));
+        } catch (error) {
+            console.error("Error parsing JSON:", error);
+        }
+    }
+
     return jsonObjects;
 }
+
 
 
 
