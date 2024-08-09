@@ -15,13 +15,13 @@ function getHeaders(row: NestedRow) {
 function buildRows(rows: NestedRow[]) {
     const headers = getHeaders(rows[0]);
     return (
-        rows.map((row) => (
-            <tr>
+        rows.map((row, i) => (
+            <tr key={i}>
                 {
-                    headers.map((header, index) => {
+                    headers.map((header, j) => {
                         const value = row[header];
                         return (
-                            <td key={index}>{getContent(header, value)}</td>
+                            <td key={j}>{getContent(header, value)}</td>
                         )
                     })
                 }
@@ -71,7 +71,8 @@ export default function Table({ rows }: TableProps) {
             overflow: 'auto',
             position: 'relative',
             whiteSpace: 'pre'
-        }}>
+        }}
+        >
             <table>
                 <thead>
                     {
