@@ -12,7 +12,7 @@ function getHeaders(row: NestedRow) {
     return Object.keys(row)
 }
 
-function buildRows(rows: NestedRow[]) {
+export function buildRows(rows: NestedRow[]) {
     const headers = getHeaders(rows[0]);
     return (
         rows.map((row, i) => (

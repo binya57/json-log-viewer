@@ -6,17 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>jsonl-log-reader</title>
     {css}
-    <script>
-        const ws = new WebSocket('ws://localhost:3000');
-        ws.onmessage = (event) => {
-            const newRow = event.data;
-            document.querySelector('table').innerHTML += newRow;
-        }
-    </script>
 </head>
 
 <body>
     {html}
+    {js}
 </body>
 
 </html>
