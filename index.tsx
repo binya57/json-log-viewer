@@ -1,8 +1,8 @@
-import './components/Form.tsx';
-import { renderToStaticMarkup } from 'react-dom/server';
-import Table, { buildRows, type NestedRow } from './components/Table.tsx';
-import Form from './components/Form.tsx';
 import type { BunFile, Server, ServerWebSocket } from 'bun';
+import { renderToStaticMarkup } from 'react-dom/server';
+import './components/Form.tsx';
+import Form from './components/Form.tsx';
+import Table, { buildRows, type NestedRow } from './components/Table.tsx';
 /*================== */
 /* You can import these file types in bun as a string */
 //@ts-ignore
@@ -10,10 +10,14 @@ import htmlLayoutFileText from "./index.html" with { type: "text" };
 //@ts-ignore
 import generalCssFileText from "./index.css" with { type: "text" };
 /*================== */
+import { watch, type WatchEventType } from "fs";
 
-import { watch } from "fs";
+type AppSocket = ServerWebSocket<{ [FILE_NAME_KEY]: string, [FILE_SIZE_KEY]: number }>
 
-type AppSocket = ServerWebSocket<{ file_or_folder: string, file_size: number }>
+export const FILE_NAME_KEY = 'file_name';
+const FILE_SIZE_KEY = 'file_size';
+const decoder = new TextDecoder();
+
 
 const server = Bun.serve({
     async fetch(req, server) {
@@ -24,46 +28,40 @@ const server = Bun.serve({
             return new Response("Internal Server Error", { status: 500 });
         }
     },
-
-
-
     websocket: {
-        // this is called when a message is received
         async message(ws, message) {
-            console.log(`Received ${message}`);
-            // send back a message
-            ws.send(`You said: ${message}`);
         },
         // a socket is opened
         open(ws: AppSocket) {
-            const path = ws.data.file_or_folder;
-            const watcher = watch(path, async (event, filename) => {
+            const path = ws.data[FILE_NAME_KEY];
+            const watcher = watch(path, handleFileChange);
+            process.on("SIGINT", handleCloseProcessRequest);
+
+            async function handleFileChange(event: WatchEventType) {
                 if (event !== 'change')
                     return;
 
                 const file = Bun.file(path);
-                const previousSize = ws.data.file_size || 0;
+                const previousSize = ws.data[FILE_SIZE_KEY] || 0;
                 const currentSize = file.size;
-                console.log({ previousSize, currentSize });
                 const newData = await getFileAsJsonObjectsArray(file, previousSize);
-                ws.data.file_size = currentSize;
+                ws.data[FILE_SIZE_KEY] = currentSize;
                 const html = renderToStaticMarkup(buildRows(newData));
                 ws.send(html)
-            });
+            }
 
-            process.on("SIGINT", () => {
+            function handleCloseProcessRequest() {
                 // close watcher when Ctrl-C is pressed
                 console.log("Closing watcher...");
                 watcher.close();
                 ws.close(1000, "Server was treminated by user");
                 process.exit(0);
-            });
+            }
         },
         // a socket is closed
         close(ws, code, message) { },
         // the socket is ready to receive more data
         drain(ws) { },
-
     },
 });
 
@@ -71,8 +69,8 @@ async function handleHttpRequest(req: Request, server: Server) {
     const cookies = parseCookies(req.headers.get('Cookie') || '');
     const success = server.upgrade(req, {
         data: {
-            file_or_folder: cookies.get('file_or_folder'),
-            file_size: cookies.get('file_size'),
+            [FILE_NAME_KEY]: cookies.get(FILE_NAME_KEY),
+            [FILE_SIZE_KEY]: cookies.get(FILE_SIZE_KEY),
         }
     });
     if (success) {
@@ -84,17 +82,19 @@ async function handleHttpRequest(req: Request, server: Server) {
     // handle HTTP request normally
     if (req.method === 'POST') {
         const formData = await req.formData();
-        const fileOrFolderPath = formData.get('file_or_folder');
-        if (!fileOrFolderPath) throw new Error('no file or folder path provided');
+        const fileOrFolderPath = formData.get(FILE_NAME_KEY);
+        if (!fileOrFolderPath) {
+            throw new Error('no file or folder path provided');
+        }
         const file = Bun.file(fileOrFolderPath.toString());
         const jsonObjects = await getFileAsJsonObjectsArray(file);
         const html = renderJsxToHtml(<Table rows={jsonObjects} />);
         const page = layout(html, await Bun.file('client-ws.js').text());
         const headers = new Headers({
             "Content-Type": "text/html",
-            "Set-Cookie": cookie('file_or_folder', fileOrFolderPath.toString()),
+            "Set-Cookie": createCookie(FILE_NAME_KEY, fileOrFolderPath.toString()),
         });
-        headers.append("Set-Cookie", cookie('file_size', file.size.toString()));
+        headers.append("Set-Cookie", createCookie(FILE_SIZE_KEY, file.size.toString()));
         return new Response(page, { headers, });
     }
     const html = renderJsxToHtml(<Form />);
@@ -102,13 +102,11 @@ async function handleHttpRequest(req: Request, server: Server) {
     return new Response(page, { headers: { "Content-Type": "text/html" } });
 }
 
-const decoder = new TextDecoder();
 async function getFileAsJsonObjectsArray(file: BunFile, lastPosition = 0) {
     if (!file) {
         throw new Error("invalid file");
     }
 
-    console.log('received lastPosition:', lastPosition);
     if (lastPosition >= file.size) {
         return [];
     }
@@ -167,14 +165,13 @@ async function getFileAsJsonObjectsArray(file: BunFile, lastPosition = 0) {
     return jsonObjects;
 }
 
-
-
-
-function layout(html = '', js: string = '') {
-    const withLayout = htmlLayoutFileText.replace('{css}', `<style>${generalCssFileText}</style>`).replace('{html}', html).replace('{js}', `<script>${js}</script>`);
+function layout(html = '', js = '') {
     return (
-        withLayout
-    )
+        htmlLayoutFileText
+            .replace('{css}', `<style>${generalCssFileText}</style>`)
+            .replace('{html}', html)
+            .replace('{js}', `<script>${js}</script>`)
+    );
 }
 
 const renderJsxToHtml = (jsx: JSX.Element) => {
@@ -187,12 +184,12 @@ function parseCookies(cookie: string): { cookies: Record<string, string>, get: (
             cookie.split(';').map(cookie => cookie.split('=').map(str => str.trim()))
         ),
         get(key: string) {
-            return this.cookies[key];
+            return this.cookies[key] || '';
         }
     }
 }
 
-function cookie(key: string, value: string) {
+function createCookie(key: string, value: string) {
     return `${key}=${value}; Secure; HttpOnly; SameSite=Strict;`
 }
 
