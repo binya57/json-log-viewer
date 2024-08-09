@@ -6,9 +6,9 @@ import Table, { buildRows, type NestedRow } from './components/Table.tsx';
 /*================== */
 /* You can import these file types in bun as a string */
 //@ts-ignore
-import htmlLayoutFileText from "./index.html" with { type: "text" };
+import htmlLayoutFileText from "./static/index.html" with { type: "text" };
 //@ts-ignore
-import generalCssFileText from "./index.css" with { type: "text" };
+import generalCssFileText from "./static/index.css" with { type: "text" };
 /*================== */
 import { watch, type WatchEventType } from "fs";
 
@@ -89,7 +89,7 @@ async function handleHttpRequest(req: Request, server: Server) {
         const file = Bun.file(fileOrFolderPath.toString());
         const jsonObjects = await getFileAsJsonObjectsArray(file);
         const html = renderJsxToHtml(<Table rows={jsonObjects} />);
-        const page = layout(html, await Bun.file('client-ws.js').text());
+        const page = layout(html, await Bun.file('./static/client-ws.js').text());
         const headers = new Headers({
             "Content-Type": "text/html",
             "Set-Cookie": createCookie(FILE_NAME_KEY, fileOrFolderPath.toString()),
